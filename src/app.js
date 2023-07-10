@@ -23,6 +23,7 @@ const hsorcerer = {
         player: [],
         bob: [],
         boughtThisTurn: [],
+        phase: 'game_start',
     },
     Reader: null,
     Parser: null,
@@ -30,9 +31,11 @@ const hsorcerer = {
     async init() {
         this.Reader = reader(this.parseLine.bind(this));
         this.Parser = parser(this.currentGame, this.onEvent.bind(this));
-        this.Reinforcement = await reinforcement();
+        this.Reinforcement = reinforcement();
 
+        //this.Reader.readArchive();
         this.Reader.start();
+
     },
     parseLine(line) {
         const parsedLine = this.Parser.parseLine(line);
@@ -48,28 +51,22 @@ const hsorcerer = {
                 this.playState.player = [];
                 this.playState.bob = [];
                 this.playState.boughtThisTurn = [];
+                this.playState.phase = 'game_start';
             },
             'turn_end': function(data) {
                 this.message(`Turn ${data-1} has ended...`)
-
-                if(this.playState.damage_taken > 0) {
-                    this.message(`Took ${this.playState.damage_taken} damage...`)
-                }
-
-                this.Reinforcement.learn(
-                    this.playState.boughtThisTurn,
-                    this.playState.player,
-                    this.currentGame.turn,
-                    this.playState.damage_taken
-                );
-
-                this.playState.boughtThisTurn = [];
-                this.playState.damage_taken = 0;
-
+                this.playState.phase = 'turn_end';
+            },
+            'main_start': function(data) {
+                this.message(`Main start...`)
+                this.afterTurn();
+                this.playState.phase = 'turn_start';
             },
             'damage_taken': function(data) {
-                this.message('Took damage...')
-                this.playState.damage_taken = data;
+                if(this.playState.phase !== 'turn_start') {
+                  this.message(`Took ${data} damage...`)
+                  this.playState.damage_taken = data;
+                }
             },
             'update_bob': function(data) {
                 this.message('State has been updated...')
@@ -79,13 +76,23 @@ const hsorcerer = {
                 if(this.currentGame.tavern_tier < 6)
                     this.playState.bob.push(this.getNextTavernTierCard());
 
-                const recommendation = this.Reinforcement.recommend(
+                const recommendations = this.Reinforcement.recommend(
                     this.playState.bob,
                     this.playerPlayStateWithoutTavernTierCard(),
                     this.currentGame.turn
                 );
 
-                this.message(`Recommendation: ${recommendation}`)
+                for(const recommendation of recommendations) {
+                    let color = '\x1b[90m';
+
+                    if(recommendation.value > 0) {
+                        color = '\x1b[32m';
+                    } else if(recommendation.value < 0) {
+                        color = '\x1b[31m';
+                    }
+
+                    this.message(`${color} ${recommendation.entityName} (${recommendation.value}) \x1b[0m`, 'recommendation');
+                }
             },
             'card_played' : function(data) {
                 this.message('Card has been played...', data)
@@ -111,6 +118,8 @@ const hsorcerer = {
             },
             'game_over': function(data) {
                 this.message('Game has ended...')
+                this.afterTurn();
+                this.playState.phase = 'game_end';
                 this.playState.game_has_ended = true;
                 this.lookingForGame = true;
             }
@@ -118,6 +127,19 @@ const hsorcerer = {
 
         if(lookUpTable[type])
             lookUpTable[type].call(this, data);
+    },
+    afterTurn() {
+      this.message('Learning')
+
+      this.Reinforcement.learn(
+          this.playState.boughtThisTurn,
+          this.playState.player,
+          this.currentGame.turn-1,
+          this.playState.damage_taken
+      );
+
+      this.playState.boughtThisTurn = [];
+      this.playState.damage_taken = 0;
     },
     getCurrentTavernTierCard() {
         return `Tavern Tier ${this.currentGame.tavern_tier}`
@@ -137,5 +159,3 @@ const hsorcerer = {
 }
 
 hsorcerer.init();
-
-

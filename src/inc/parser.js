@@ -20,6 +20,7 @@ module.exports = function(game, onEvent) {
             this.checkForCardPlayed(line);
             this.checkForCardSold(line);
             this.checkForGameOver(line);
+            this.checkForMainStartTrigger(line);
 
             //if(/GameState.DebugPrintPower.+TAG_CHANGE Entity=GameEntity tag=NUM_TURNS_IN_PLAY value=/.test(line)) {
 
@@ -109,7 +110,7 @@ module.exports = function(game, onEvent) {
         },
         checkForCardPlayed(line) {
             if(/GameState.DebugPrintPower().+TAG_CHANGE Entity=.+cardId.+tag=ZONE value=PLAY/.test(line)) {
-                const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\s]+)\s/)[1].trim();
+                const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\!\?\s]+)\s/)[1].trim();
                 const cardId = line.match(/cardId=(\w+)/)[1];
                 const zone = line.match(/zone=(\w+)/)[1];
                 const zonePos = line.match(/zonePos=(\d+)/)[1];
@@ -119,6 +120,7 @@ module.exports = function(game, onEvent) {
                     player === this.game.playerId
                     && zonePos !== '0'
                     && !entityName.includes('Triple Reward')
+                    && entityName !== 'Blood Gem'
                     && cardId.startsWith('BG')
                     && !cardId.endsWith('t')
                 ) {
@@ -127,9 +129,9 @@ module.exports = function(game, onEvent) {
             }
         },
         checkForCardSold(line) {
-            if(/PowerTaskList.DebugPrintPower.+TRANSIENT_ENTITY/.test(line)) {
+            if(/PowerTaskList.DebugPrintPower.+zone=PLAY.+TRANSIENT_ENTITY/.test(line)) {
                 if(line.includes('entityName')) {
-                    const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\s]+)\s/)[1].trim();
+                    const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\!\?\s]+)\s/)[1].trim();
                     const cardId = line.match(/cardId=(\w+)/)[1];
                     const player = line.match(/player=(\d+)/)[1];
 
@@ -145,6 +147,11 @@ module.exports = function(game, onEvent) {
                     }
                 }
             }
+        },
+        checkForMainStartTrigger(line) {
+          if(/GameState.DebugPrintPower().+TAG_CHANGE.+Entity=GameEntity tag=STEP value=MAIN_START_TRIGGERS/.test(line)) {
+            this.callback('main_start', null);
+          }
         },
         parseGameBlock() {
             const createGameBlockJoined = this.createGameBlock.join('\n');
@@ -174,12 +181,12 @@ module.exports = function(game, onEvent) {
             for(let line of this.stateBlock) {
                 if(
                     !line.includes('entityName')
-                    || !line.includes('cardId')
-                    || !line.includes('player')
+                    || !/cardId=(\w+)/.test(line)
+                    || !/player=(\d+)/.test(line)
                 )
                     continue;
 
-                const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\s]+)\s/)[1].trim();
+                const entityName = line.match(/entityName=([a-zA-Z0-9\-\'\,\.\!\?\s]+)\s/)[1].trim();
 
                 const cardId = line.match(/cardId=(\w+)/)[1];
                 const zone = line.match(/zone=(\w+)/)[1];

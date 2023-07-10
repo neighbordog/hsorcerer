@@ -26,6 +26,30 @@ module.exports = function (onLine) {
         stop() {
           this.trackChangesInterval = clearInterval(this.trackChangesInterval);
         },
+        readArchive() {
+          const directories = fs.readdirSync(this.HS_DIR, { withFileTypes: true })
+              .filter(dirent => dirent.isDirectory())
+              .map(dirent => dirent.name)
+
+          for(const dir of directories) {
+            const logFilePath = path.join(this.HS_DIR, dir) + '\\Power.log';
+
+            if (fs.existsSync(logFilePath)) {
+                console.log('Power.log found.');
+
+                const fileContent = fs.readFileSync(logFilePath, 'utf-8');
+                const lines = fileContent.split('\n');
+
+                lines.forEach((line, index) => {
+                  if (index === lines.length - 1 && line === '') return;
+
+                  for(const callable of this.listeners) {
+                      callable(line);
+                  }
+                })
+            }
+          }
+        },
         trackFileChanges() {
             if (!fs.existsSync(this.logFilePath)) {
                 console.log('Power.log not found.');

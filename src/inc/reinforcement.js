@@ -1,30 +1,50 @@
 const fs = require('fs');
 
-module.exports = async function() {
+module.exports = function() {
     const instance = {
         learnRate: 0.1,
         explorationRate: 0.3,
+        highestValue: 10,
+        lowestValue: -10,
         data: {},
-        async init() {
+        init() {
             if(!fs.existsSync('./model.json')) {
                 fs.writeFileSync('./model.json', '{}');
             }
 
             try {
-                const data = await fs.promises.readFile('./model.json');
+                const data = fs.readFileSync('./model.json');
                 this.data = JSON.parse(data);
             } catch (err) {
                 console.log(err);
             }
+
+            // find highest and lowest value in data
+            let highestValue = 10;
+            let lowestValue = -10;
+
+            for(const turn in this.data) {
+                for(const playerCard in this.data[turn]) {
+                    for(const boughtCard in this.data[turn][playerCard]) {
+                        const value = this.data[turn][playerCard][boughtCard];
+
+                        if(value > highestValue) {
+                            highestValue = value;
+                        }
+
+                        if(value < lowestValue) {
+                            lowestValue = value;
+                        }
+                    }
+                }
+            }
+
+            this.highestValue = highestValue;
+            this.lowestValue = lowestValue;
         },
         save() {
             // write file async
-            fs.writeFile('./model.json', JSON.stringify(this.data), (err) => {
-                if (err) {
-                    console.log(err);
-                    return;
-                }
-            });
+            fs.writeFileSync('./model.json', JSON.stringify(this.data));
         },
         learn(bought, player, turn, damage_taken=0) {
             bought = [...new Set(bought)];
@@ -56,22 +76,22 @@ module.exports = async function() {
 
             const reward = this.getReward(damage_taken);
 
-            this.data[turn][boughtCard][playerCard] += this.learnRate * reward;
+            this.data[turn][boughtCard][playerCard] = parseFloat((this.data[turn][boughtCard][playerCard] + this.learnRate * reward).toFixed(3));
         },
         getReward(damage_taken) {
             if(damage_taken >= 11) {
-                return -1;
-            } else if(damage_taken < 10) {
-                return -0.5;
+                return -10;
+            } else if(damage_taken > 0 && damage_taken < 10) {
+                return -5;
             }
 
-            return 1;
+            return 10;
         },
         recommend(bob, player, turn) {
             bob = [...new Set(bob)];
             player = [...new Set(player)];
 
-            //console.log(bob, player)
+            // console.log(bob, player)
 
             const results = [];
             for(let i = 0; i < bob.length; i++) {
@@ -83,9 +103,9 @@ module.exports = async function() {
                 for(let playerCard of player) {
                     playerCard = this.keyableName(playerCard);
 
-                    if(this.data[turn] && this.data[turn][playerCard] && this.data[turn][playerCard][bobCard]) {
+                    if(this.data[turn] && this.data[turn][bobCard] && this.data[turn][bobCard][playerCard]) {
                         resultsFound++;
-                        totalValue += this.data[turn][playerCard][bobCard];
+                        totalValue += this.data[turn][bobCard][playerCard];
                     }
                 }
 
@@ -100,14 +120,40 @@ module.exports = async function() {
                 results.push(value);
             }
 
-            if(Math.random() < this.explorationRate) {
-                return bob[Math.floor(Math.random() * bob.length)];
-            } else {
-                const highestValue = Math.max(...results);
-                const highestValueIndex = results.indexOf(highestValue);
+            // sort results by highest value
+            const sorted = results.map((value, index) => {
+                return {
+                    value,
+                    index
+                }
+            }).sort((a, b) => {
+                return b.value - a.value;
+            });
 
-                return bob[highestValueIndex];
+
+            // match sorted with bob
+            const sortedBob = sorted.map((item) => {
+                return {
+                    entityName: bob[item.index],
+                    value: this.normalizeValue(item.value)
+                };
+            });
+
+            return sortedBob;
+        },
+        normalizeValue(value) {
+            let normalized = 0;
+
+            const minNormalized = -100;
+            const maxNormalized = 100;
+
+            if(value < 0) {
+                normalized = (value - this.lowestValue) / this.lowestValue * minNormalized + minNormalized
+            } else if(value > 0) {
+                normalized = (value - this.highestValue) / this.highestValue * maxNormalized + maxNormalized
             }
+
+            return Math.round(normalized);
         }
     }
 
